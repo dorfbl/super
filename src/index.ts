@@ -33,9 +33,9 @@ const COMMAND_GROUPS = new Set(
 );
 const AUTH_DIR = process.env.AUTH_DIR ?? "./auth";
 
-if (ALLOWED_JIDS.length === 0) {
+if (ALLOWED_JIDS.length === 0 && COMMAND_GROUPS.size === 0) {
   console.error(
-    "WHATSAPP_ALLOWED_JIDS is required (comma-separated JIDs).",
+    "Set at least one of WHATSAPP_ALLOWED_JIDS (DMs) or WHATSAPP_GROUP_JIDS (groups).",
   );
   process.exit(1);
 }
