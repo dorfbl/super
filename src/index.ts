@@ -42,6 +42,12 @@ async function start(): Promise<void> {
     auth: state,
     browser: Browsers.macOS("Desktop"),
     logger: P({ level: "warn" }) as never,
+    syncFullHistory: false,
+    shouldSyncHistoryMessage: () => false,
+    markOnlineOnConnect: false,
+    connectTimeoutMs: 60_000,
+    defaultQueryTimeoutMs: 60_000,
+    keepAliveIntervalMs: 10_000,
   });
 
   sock.ev.on("creds.update", saveCreds);
