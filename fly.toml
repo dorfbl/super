@@ -1,0 +1,23 @@
+# Fly.io app config. Rename `app` and pick a region near you.
+# Israel users: `fra` (Frankfurt) or `cdg` (Paris) are closest.
+
+app = "shopping-bot"
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile"
+
+# Persistent volume for Baileys auth state.
+# Create once with: fly volumes create auth_data --size 1 --region fra
+[[mounts]]
+  source = "auth_data"
+  destination = "/data"
+
+# Single always-on worker. No services / http_service => Fly won't auto-stop it.
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512
+
+[deploy]
+  strategy = "immediate"

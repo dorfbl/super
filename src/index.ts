@@ -1,0 +1,105 @@
+import "dotenv/config";
+import {
+  default as makeWASocket,
+  useMultiFileAuthState,
+  DisconnectReason,
+  type WASocket,
+} from "@whiskeysockets/baileys";
+import { Boom } from "@hapi/boom";
+import P from "pino";
+import qrcode from "qrcode-terminal";
+import { handleMessage } from "./handlers.js";
+
+const ALLOWED_JIDS = (process.env.WHATSAPP_ALLOWED_JIDS ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+const AUTH_DIR = process.env.AUTH_DIR ?? "./auth";
+
+if (ALLOWED_JIDS.length === 0) {
+  console.error(
+    "WHATSAPP_ALLOWED_JIDS is required (comma-separated JIDs).",
+  );
+  process.exit(1);
+}
+if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
+  console.error("SUPABASE_URL and SUPABASE_SERVICE_KEY are required.");
+  process.exit(1);
+}
+if (!process.env.ANTHROPIC_API_KEY) {
+  console.error("ANTHROPIC_API_KEY is required.");
+  process.exit(1);
+}
+
+async function start(): Promise<void> {
+  const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+  const sock: WASocket = makeWASocket({
+    auth: state,
+    logger: P({ level: "warn" }) as never,
+  });
+
+  sock.ev.on("creds.update", saveCreds);
+
+  sock.ev.on("connection.update", (update) => {
+    const { connection, lastDisconnect, qr } = update;
+    if (qr) {
+      console.log(
+        "Scan this QR with WhatsApp (Settings > Linked Devices > Link a Device):",
+      );
+      qrcode.generate(qr, { small: true });
+    }
+    if (connection === "open") {
+      console.log("Connected. Allowed:", ALLOWED_JIDS.join(", "));
+    } else if (connection === "close") {
+      const code = (lastDisconnect?.error as Boom | undefined)?.output
+        ?.statusCode;
+      const loggedOut = code === DisconnectReason.loggedOut;
+      console.log(
+        `Connection closed (code ${code}). ${
+          loggedOut
+            ? "Logged out — delete the auth dir and restart to relink."
+            : "Reconnecting..."
+        }`,
+      );
+      if (!loggedOut) {
+        setTimeout(() => {
+          start().catch((e) => console.error("Restart failed:", e));
+        }, 2000);
+      }
+    }
+  });
+
+  sock.ev.on("messages.upsert", async ({ messages }) => {
+    for (const msg of messages) {
+      if (msg.key.fromMe) continue;
+      if (!msg.message) continue;
+
+      const from = msg.key.remoteJid;
+      if (!from || !ALLOWED_JIDS.includes(from)) continue;
+
+      const text =
+        msg.message.conversation ??
+        msg.message.extendedTextMessage?.text ??
+        msg.message.imageMessage?.caption ??
+        "";
+      if (!text.trim()) continue;
+
+      try {
+        const reply = await handleMessage(text, from);
+        await sock.sendMessage(from, { text: reply });
+      } catch (e) {
+        console.error("Handler error:", e);
+        try {
+          await sock.sendMessage(from, {
+            text: "Error processing your message. / שגיאה בעיבוד הבקשה.",
+          });
+        } catch {}
+      }
+    }
+  });
+}
+
+start().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
