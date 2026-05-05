@@ -16,6 +16,12 @@ const ALLOWED_JIDS = (process.env.WHATSAPP_ALLOWED_JIDS ?? "")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
+// Allow matching by the user-portion of a JID too, so messages arriving with
+// a different suffix (e.g. @lid instead of @s.whatsapp.net) still match if
+// the phone-number prefix is the same.
+const ALLOWED_USERS = new Set(
+  ALLOWED_JIDS.map((j) => j.split("@")[0]).filter(Boolean),
+);
 const AUTH_DIR = process.env.AUTH_DIR ?? "./auth";
 
 if (ALLOWED_JIDS.length === 0) {
@@ -81,24 +87,39 @@ async function start(): Promise<void> {
     }
   });
 
-  sock.ev.on("messages.upsert", async ({ messages }) => {
+  sock.ev.on("messages.upsert", async ({ messages, type }) => {
+    console.log(`[upsert] type=${type} count=${messages.length}`);
     for (const msg of messages) {
-      if (msg.key.fromMe) continue;
-      if (!msg.message) continue;
-
       const from = msg.key.remoteJid;
-      if (!from || !ALLOWED_JIDS.includes(from)) continue;
+      const fromMe = msg.key.fromMe;
+      const hasContent = !!msg.message;
+      const fromUser = from?.split("@")[0] ?? "";
+      const allowed =
+        !!from &&
+        (ALLOWED_JIDS.includes(from) || ALLOWED_USERS.has(fromUser));
+      console.log(
+        `[msg] from=${from} fromMe=${fromMe} hasContent=${hasContent} allowed=${allowed}`,
+      );
+
+      if (fromMe) continue;
+      if (!msg.message) continue;
+      if (!from || !allowed) continue;
 
       const text =
         msg.message.conversation ??
         msg.message.extendedTextMessage?.text ??
         msg.message.imageMessage?.caption ??
         "";
-      if (!text.trim()) continue;
+      if (!text.trim()) {
+        console.log(`[msg] no text payload, skipping`);
+        continue;
+      }
+      console.log(`[msg] text=${JSON.stringify(text)}`);
 
       try {
         const reply = await handleMessage(text, from);
         await sock.sendMessage(from, { text: reply });
+        console.log(`[msg] reply sent`);
       } catch (e) {
         console.error("Handler error:", e);
         try {
