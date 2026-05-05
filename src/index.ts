@@ -22,6 +22,15 @@ const ALLOWED_JIDS = (process.env.WHATSAPP_ALLOWED_JIDS ?? "")
 const ALLOWED_USERS = new Set(
   ALLOWED_JIDS.map((j) => j.split("@")[0]).filter(Boolean),
 );
+// Group chats where the bot accepts commands from anyone in the group,
+// including the paired account itself (fromMe=true). Comma-separated JIDs
+// like `120363...@g.us`.
+const COMMAND_GROUPS = new Set(
+  (process.env.WHATSAPP_GROUP_JIDS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
+);
 const AUTH_DIR = process.env.AUTH_DIR ?? "./auth";
 
 if (ALLOWED_JIDS.length === 0) {
@@ -88,38 +97,52 @@ async function start(): Promise<void> {
   });
 
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
-    console.log(`[upsert] type=${type} count=${messages.length}`);
+    // Skip the bot's own outgoing messages — they arrive here as fromMe=true
+    // appends right after we send a reply, and we'd loop on ourselves.
+    if (type === "append") return;
+
     for (const msg of messages) {
       const from = msg.key.remoteJid;
+      if (!from || !msg.message) continue;
+
       const fromMe = msg.key.fromMe;
-      const hasContent = !!msg.message;
-      const fromUser = from?.split("@")[0] ?? "";
-      const allowed =
-        !!from &&
-        (ALLOWED_JIDS.includes(from) || ALLOWED_USERS.has(fromUser));
+      const isGroup = from.endsWith("@g.us");
+      const inCmdGroup = isGroup && COMMAND_GROUPS.has(from);
+
+      // Group: accept any message in an allowlisted group, including ones
+      // sent by the paired account itself.
+      // DM: accept only inbound messages (fromMe=false) from allowlisted
+      // contacts.
+      let allowed = false;
+      if (inCmdGroup) {
+        allowed = true;
+      } else if (!fromMe && !isGroup) {
+        const fromUser = from.split("@")[0];
+        allowed =
+          ALLOWED_JIDS.includes(from) || ALLOWED_USERS.has(fromUser);
+      }
+      if (!allowed) continue;
 
       const text =
-        msg.message?.conversation ??
-        msg.message?.extendedTextMessage?.text ??
-        msg.message?.imageMessage?.caption ??
+        msg.message.conversation ??
+        msg.message.extendedTextMessage?.text ??
+        msg.message.imageMessage?.caption ??
         "";
+      if (!text.trim()) continue;
 
-      console.log(
-        `[msg] from=${from} fromMe=${fromMe} hasContent=${hasContent} allowed=${allowed} text=${JSON.stringify(text)}`,
-      );
+      // Attribute the command to the actual sender. In a group the sender
+      // is the participant; in a DM it's the chat itself. For self-sent
+      // messages in a group (fromMe=true) Baileys may omit participant —
+      // fall back to a stable label.
+      const sender = isGroup
+        ? msg.key.participant ?? (fromMe ? "self@bot" : from)
+        : from;
 
-      if (fromMe) continue;
-      if (!msg.message) continue;
-      if (!from || !allowed) continue;
-      if (!text.trim()) {
-        console.log(`[msg] no text payload, skipping`);
-        continue;
-      }
+      console.log(`[cmd] chat=${from} sender=${sender}: ${text}`);
 
       try {
-        const reply = await handleMessage(text, from);
+        const reply = await handleMessage(text, sender);
         await sock.sendMessage(from, { text: reply });
-        console.log(`[msg] reply sent`);
       } catch (e) {
         console.error("Handler error:", e);
         try {
