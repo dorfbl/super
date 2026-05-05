@@ -2,6 +2,8 @@ import "dotenv/config";
 import {
   default as makeWASocket,
   useMultiFileAuthState,
+  fetchLatestBaileysVersion,
+  Browsers,
   DisconnectReason,
   type WASocket,
 } from "@whiskeysockets/baileys";
@@ -33,8 +35,12 @@ if (!process.env.ANTHROPIC_API_KEY) {
 
 async function start(): Promise<void> {
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+  const { version, isLatest } = await fetchLatestBaileysVersion();
+  console.log(`Using WA Web v${version.join(".")} (latest=${isLatest})`);
   const sock: WASocket = makeWASocket({
+    version,
     auth: state,
+    browser: Browsers.macOS("Desktop"),
     logger: P({ level: "warn" }) as never,
   });
 
