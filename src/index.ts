@@ -97,24 +97,24 @@ async function start(): Promise<void> {
       const allowed =
         !!from &&
         (ALLOWED_JIDS.includes(from) || ALLOWED_USERS.has(fromUser));
+
+      const text =
+        msg.message?.conversation ??
+        msg.message?.extendedTextMessage?.text ??
+        msg.message?.imageMessage?.caption ??
+        "";
+
       console.log(
-        `[msg] from=${from} fromMe=${fromMe} hasContent=${hasContent} allowed=${allowed}`,
+        `[msg] from=${from} fromMe=${fromMe} hasContent=${hasContent} allowed=${allowed} text=${JSON.stringify(text)}`,
       );
 
       if (fromMe) continue;
       if (!msg.message) continue;
       if (!from || !allowed) continue;
-
-      const text =
-        msg.message.conversation ??
-        msg.message.extendedTextMessage?.text ??
-        msg.message.imageMessage?.caption ??
-        "";
       if (!text.trim()) {
         console.log(`[msg] no text payload, skipping`);
         continue;
       }
-      console.log(`[msg] text=${JSON.stringify(text)}`);
 
       try {
         const reply = await handleMessage(text, from);
