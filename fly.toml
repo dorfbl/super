@@ -1,23 +1,30 @@
-# Fly.io app config. Rename `app` and pick a region near you.
-# Israel users: `fra` (Frankfurt) or `cdg` (Paris) are closest.
+# fly.toml app configuration file generated for super-q-57og on 2026-05-06T06:41:50Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
 
-app = "shopping-bot"
-primary_region = "fra"
+app = 'super-q-57og'
+primary_region = 'ams'
 
 [build]
-  dockerfile = "Dockerfile"
-
-# Persistent volume for Baileys auth state.
-# Create once with: fly volumes create auth_data --size 1 --region fra
-[[mounts]]
-  source = "auth_data"
-  destination = "/data"
-
-# Single always-on worker. No services / http_service => Fly won't auto-stop it.
-[[vm]]
-  cpu_kind = "shared"
-  cpus = 1
-  memory_mb = 512
+  dockerfile = 'Dockerfile'
 
 [deploy]
-  strategy = "immediate"
+  strategy = 'immediate'
+
+[[mounts]]
+  source = 'auth_data'
+  destination = '/data'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+[[vm]]
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 512
