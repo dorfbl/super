@@ -56,7 +56,7 @@ async function start(): Promise<void> {
     version,
     auth: state,
     browser: Browsers.macOS("Desktop"),
-    logger: P({ level: "warn" }) as never,
+    logger: P({ level: "silent" }) as never,
     syncFullHistory: false,
     shouldSyncHistoryMessage: () => false,
     markOnlineOnConnect: false,
