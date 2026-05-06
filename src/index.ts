@@ -79,6 +79,18 @@ async function start(): Promise<void> {
       console.log(
         `Connected. DMs=[${ALLOWED_JIDS.join(", ") || "none"}] groups=[${[...COMMAND_GROUPS].join(", ") || "none"}]`,
       );
+      // List groups the paired account is in, so the user can copy the
+      // right JID into WHATSAPP_GROUP_JIDS.
+      sock
+        .groupFetchAllParticipating()
+        .then((groups) => {
+          const entries = Object.values(groups);
+          console.log(`Groups visible to this account (${entries.length}):`);
+          for (const g of entries) {
+            console.log(`  ${g.id}  ${g.subject}`);
+          }
+        })
+        .catch((e) => console.error("Failed to list groups:", e));
     } else if (connection === "close") {
       const code = (lastDisconnect?.error as Boom | undefined)?.output
         ?.statusCode;
