@@ -76,7 +76,9 @@ async function start(): Promise<void> {
       qrcode.generate(qr, { small: true });
     }
     if (connection === "open") {
-      console.log("Connected. Allowed:", ALLOWED_JIDS.join(", "));
+      console.log(
+        `Connected. DMs=[${ALLOWED_JIDS.join(", ") || "none"}] groups=[${[...COMMAND_GROUPS].join(", ") || "none"}]`,
+      );
     } else if (connection === "close") {
       const code = (lastDisconnect?.error as Boom | undefined)?.output
         ?.statusCode;
