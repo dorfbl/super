@@ -81,23 +81,112 @@ npm run dev
 
 מישהו בקבוצה שולח `עזרה` — הבוט עונה עם רשימת הפקודות. שליחת `חלב, לחם, ביצים` מוסיפה אותם לרשימה ומציגה סיכום. שליחת `רשימה` מציגה את הרשימה הנוכחית, מסודרת לפי מחלקות.
 
-## דיפלוי ל-Fly.io
+## דיפלוי ל-Fly.io — שלב אחר שלב
 
-```bash
-brew install flyctl                    # או: curl -L https://fly.io/install.sh | sh
-fly auth signup
-fly launch --no-deploy                 # אשרו את fly.toml הקיים, בחרו אזור (fra/cdg)
-fly volumes create auth_data --size 1 --region fra
-fly secrets set \
-  WHATSAPP_GROUP_JIDS="..." \
-  SUPABASE_URL="..." \
-  SUPABASE_SERVICE_KEY="..." \
-  ANTHROPIC_API_KEY="..."
-fly deploy
-fly logs                               # סרקו את ה-QR פעם אחת, וזהו
+> שני דברים שכדאי לדעת מראש:
+> - תיקיית הזיווג של Baileys על Fly היא session נפרד מהמקומית. אחרי הדיפלוי תסרקו QR חדש מתוך לוגי הענן, והזיווג נשמר בנפח התמידי שיצרנו. הזיווג המקומי ימשיך לעבוד עד שתסירו אותו ידנית מתוך WhatsApp → מכשירים מקושרים.
+> - כל הסודות עוברים ל-Fly באמצעות `fly secrets set` — לא דרך `.env` ולא דרך הקוד. Fly מצפין אותם ומזריק כמשתני סביבה לקונטיינר בריצה.
+
+### 1. התקנת `flyctl` ב-Windows
+
+ב-PowerShell:
+```powershell
+powershell -Command "iwr https://fly.io/install.ps1 -useb | iex"
+```
+**סגרו ופתחו מחדש את PowerShell** כדי שה-`PATH` יתעדכן. בדיקה:
+```powershell
+fly version
 ```
 
-נפח אימות (`auth_data`) שומר את הזיווג בין דיפלויים. סריקת QR צריך לעשות פעם אחת בלבד.
+### 2. הרשמה / התחברות
+
+```powershell
+fly auth signup        # או fly auth login למי שכבר יש חשבון
+```
+פותח דפדפן. ב-Fly יש שכבת free tier שמספיקה למכונת `shared-cpu-1x` תמידית אחת ונפח של 1GB — כלומר הבוט שלנו רץ ללא חיוב.
+
+### 3. בחירת שם אפליקציה ייחודי
+
+קובץ `fly.toml` הראשי כולל `app = "shopping-bot"` — סביר שהשם הזה כבר תפוס בעולם של Fly. ערכו את `C:\super\super\fly.toml` ושנו את השורה הראשונה לשם ייחודי, למשל:
+```toml
+app = "dorfbl-shopping"
+```
+שמרו את הקובץ.
+
+### 4. יצירת האפליקציה
+
+```powershell
+fly apps create dorfbl-shopping       # התאימו לשם שבחרתם
+```
+אם השם תפוס Fly יודיע — בחרו שם אחר, עדכנו את `fly.toml` בהתאם, ונסו שוב.
+
+### 5. יצירת נפח תמידי לזיווג
+
+```powershell
+fly volumes create auth_data --size 1 --region fra --app dorfbl-shopping
+```
+1GB מספיק בהרבה — תיקיית הזיווג שוקלת כמה KB. הנפח חייב להיות באותו אזור שב-`primary_region` בתוך `fly.toml`. תופיע שאלה אם להשתמש בנפח יחיד (ללא יתירות) — ענו **כן**.
+
+### 6. הגדרת הסודות
+
+הריצו כפקודה אחת (השתמשו ב-` בסוף שורה לפיצול שורות ב-PowerShell):
+```powershell
+fly secrets set `
+  WHATSAPP_GROUP_JIDS="120363XXXXXXXXXXXXX@g.us" `
+  SUPABASE_URL="https://xxxxxxxxxxxx.supabase.co" `
+  SUPABASE_SERVICE_KEY="<service_role key>" `
+  ANTHROPIC_API_KEY="<anthropic key>" `
+  --app dorfbl-shopping
+```
+- אין צורך ב-`AUTH_DIR` — ה-Dockerfile מקבע אותו ל-`/data/auth`.
+- אין צורך ב-`WHATSAPP_ALLOWED_JIDS` במצב קבוצה.
+- ב-`SUPABASE_SERVICE_KEY` שימו את מפתח ה-`service_role`, לא ה-`anon`.
+
+### 7. דיפלוי
+
+```powershell
+fly deploy --app dorfbl-shopping
+```
+לוקח 2-5 דקות בפעם הראשונה (build של ה-Docker image). בסיום `fly status` אמור להראות מכונה במצב `started`.
+
+### 8. צפייה בלוגים וסריקת QR
+
+```powershell
+fly logs --app dorfbl-shopping
+```
+תראו את הבוט עולה, מושך את גרסת Baileys, ואז מדפיס קוד QR ב-ASCII. ב-WhatsApp בטלפון: הגדרות → מכשירים מקושרים → קישור מכשיר → סרקו.
+
+**הקוד תקף ~30 שניות**. אם פספסתם — לא נורא, הבוט יתחבר מחדש וידפיס חדש.
+
+אחרי סריקה אמורה להופיע השורה:
+```
+Connected. DMs=[none] groups=[120363...@g.us]
+```
+שלחו `עזרה` בקבוצה כדי לוודא שהוא עונה. `Ctrl-C` יוצא מהזרם של הלוגים אך הבוט ממשיך לרוץ.
+
+### 9. בדיקה וניקיון
+
+```powershell
+fly status --app dorfbl-shopping
+fly ssh console --app dorfbl-shopping  # רק אם צריך לדבג בפנים הקונטיינר
+```
+
+ברגע שהבוט בענן יציב:
+- עצרו את ה-`npm run dev` המקומי.
+- ב-WhatsApp → מכשירים מקושרים, יופיעו שני מכשירים (המחשב המקומי + Fly). הסירו את המקומי כדי שתוסר לכם תפוצה כפולה.
+
+### תקלות אפשריות בעת דיפלוי
+
+| תופעה | תיקון |
+|---|---|
+| `fly: command not found` אחרי התקנה | סגירה ופתיחה של PowerShell. אם עדיין לא — ריסטרט ל-Windows. |
+| `App name has already been taken` | שם תפוס. בחרו שם אחר, עדכנו את `fly.toml`, חזרו לצעד 4. |
+| `Volume must be in same region as app` | `--region` בצעד 5 חייב להיות זהה ל-`primary_region` ב-`fly.toml`. |
+| QR לא מופיע בלוגים | בדקו את `fly logs` עבור שגיאות משתני סביבה. תיקון מהיר: `fly secrets set ...` שוב, ואז `fly machine restart --app ...`. |
+| QR מופיע אבל סריקה נכשלת | פג תוקף. חכו שניה — הבוט יחזור עם QR חדש. |
+| הבוט נכבה ועולה בלולאה | `fly logs` יראה למה. בדרך כלל סוד פגום (401 של Anthropic, RLS של Supabase). תיקון בסוד מבצע restart אוטומטי. |
+
+נפח אימות (`auth_data`) שומר את הזיווג בין דיפלויים. סריקת QR נדרשת רק פעם אחת.
 
 ## פקודות
 
