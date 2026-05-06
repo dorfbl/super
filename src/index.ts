@@ -156,7 +156,7 @@ async function start(): Promise<void> {
 
       try {
         const reply = await handleMessage(text, sender);
-        await sock.sendMessage(from, { text: reply });
+        if (reply) await sock.sendMessage(from, { text: reply });
       } catch (e) {
         console.error("Handler error:", e);
         try {

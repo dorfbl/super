@@ -47,3 +47,13 @@ create table if not exists purchases (
 );
 create index if not exists purchases_item_idx on purchases(item_id);
 create index if not exists purchases_at_idx on purchases(purchased_at);
+
+create table if not exists settings (
+  key text primary key,
+  value text
+);
+
+create table if not exists snoozes (
+  item_id bigint primary key references items(id) on delete cascade,
+  until timestamptz not null
+);

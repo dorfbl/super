@@ -135,7 +135,7 @@ export async function getActiveListItems(): Promise<ListItem[]> {
   return (items.data as ListItem[] | null) ?? [];
 }
 
-function matches(li: ListItem, lower: string): boolean {
+export function matches(li: ListItem, lower: string): boolean {
   if (li.raw_text.toLowerCase().includes(lower)) return true;
   const item = li.item;
   if (!item) return false;
@@ -231,9 +231,153 @@ export async function getSuggestions(
 
   const active = await getActiveListItems();
   const activeIds = new Set(active.map((li) => li.item_id));
-  const toFetch = candidateIds.filter((id) => !activeIds.has(id));
+
+  const now = new Date().toISOString();
+  const snoozed = await supabase
+    .from("snoozes")
+    .select("item_id")
+    .gte("until", now);
+  const snoozedIds = new Set(
+    (snoozed.data ?? []).map((s) => s.item_id as number),
+  );
+
+  const toFetch = candidateIds.filter(
+    (id) => !activeIds.has(id) && !snoozedIds.has(id),
+  );
   if (toFetch.length === 0) return [];
 
   const items = await supabase.from("items").select("*").in("id", toFetch);
   return (items.data as Item[] | null) ?? [];
+}
+
+export async function getSetting(key: string): Promise<string | null> {
+  const r = await supabase
+    .from("settings")
+    .select("value")
+    .eq("key", key)
+    .limit(1);
+  return r.data?.[0]?.value ?? null;
+}
+
+export async function setSetting(key: string, value: string): Promise<void> {
+  await supabase
+    .from("settings")
+    .upsert({ key, value }, { onConflict: "key" });
+}
+
+export async function deleteSetting(key: string): Promise<void> {
+  await supabase.from("settings").delete().eq("key", key);
+}
+
+export async function undoLastItem(): Promise<ListItem | null> {
+  const list = await supabase
+    .from("lists")
+    .select("id")
+    .eq("status", "active")
+    .limit(1);
+  if (!list.data?.[0]) return null;
+  const items = await supabase
+    .from("list_items")
+    .select("*, item:items(*)")
+    .eq("list_id", list.data[0].id)
+    .order("added_at", { ascending: false })
+    .limit(1);
+  const found = items.data?.[0] as ListItem | undefined;
+  if (!found) return null;
+  await supabase.from("list_items").delete().eq("id", found.id);
+  return found;
+}
+
+export async function clearActiveList(): Promise<number> {
+  const list = await supabase
+    .from("lists")
+    .select("id")
+    .eq("status", "active")
+    .limit(1);
+  if (!list.data?.[0]) return 0;
+  const before = await supabase
+    .from("list_items")
+    .select("id", { count: "exact", head: true })
+    .eq("list_id", list.data[0].id);
+  await supabase.from("list_items").delete().eq("list_id", list.data[0].id);
+  return before.count ?? 0;
+}
+
+export async function setItemCategory(
+  needle: string,
+  category: Category,
+): Promise<Item | null> {
+  const found = await findItemByText(needle);
+  if (!found) return null;
+  await supabase.from("items").update({ category }).eq("id", found.id);
+  return { ...found, category };
+}
+
+export async function renameItem(
+  needle: string,
+  newName: string,
+): Promise<Item | null> {
+  const found = await findItemByText(needle);
+  if (!found) return null;
+  const newIsHe = /[֐-׿]/.test(newName);
+  const update = newIsHe
+    ? { canonical_he: newName }
+    : { canonical_en: newName };
+  await supabase.from("items").update(update).eq("id", found.id);
+  return { ...found, ...update } as Item;
+}
+
+export async function getWhoAdded(needle: string): Promise<ListItem | null> {
+  const items = await getActiveListItems();
+  const lower = needle.trim().toLowerCase();
+  return items.find((i) => matches(i, lower)) ?? null;
+}
+
+export async function getItemFreq(
+  needle: string,
+  weeksBack = 8,
+): Promise<{ item: Item; lists: number; total: number } | null> {
+  const found = await findItemByText(needle);
+  if (!found) return null;
+  const since = new Date(
+    Date.now() - weeksBack * 7 * 24 * 60 * 60 * 1000,
+  ).toISOString();
+
+  const allRows = await supabase
+    .from("purchases")
+    .select("list_id")
+    .gte("purchased_at", since);
+  const allLists = new Set(
+    (allRows.data ?? [])
+      .map((r) => r.list_id as number | null)
+      .filter((id): id is number => id != null),
+  );
+
+  const itemRows = await supabase
+    .from("purchases")
+    .select("list_id")
+    .eq("item_id", found.id)
+    .gte("purchased_at", since);
+  const itemLists = new Set(
+    (itemRows.data ?? [])
+      .map((r) => r.list_id as number | null)
+      .filter((id): id is number => id != null),
+  );
+
+  return { item: found, lists: itemLists.size, total: allLists.size };
+}
+
+export async function snoozeItem(
+  needle: string,
+  weeks: number,
+): Promise<Item | null> {
+  const found = await findItemByText(needle);
+  if (!found) return null;
+  const until = new Date(
+    Date.now() + weeks * 7 * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  await supabase
+    .from("snoozes")
+    .upsert({ item_id: found.id, until }, { onConflict: "item_id" });
+  return found;
 }
