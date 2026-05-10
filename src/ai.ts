@@ -65,11 +65,16 @@ Categories:
 - other: anything that doesn't fit
 
 Rules:
-- Fix obvious typos ("mild" -> milk, "תפוחי אדמא" -> "תפוחי אדמה").
-- Preserve meaningful specifics in the canonical name (fat %, organic, sliced).
-- Put brand/quantity in note, not in the canonical name.
+- Fix obvious typos ("mild" -> milk, "תפוחי אדמא" -> "תפוחי אדמה", "תפוחעץ" -> "תפוח עץ").
+- Preserve EVERY descriptor and modifier in the canonical name: size, color, variety, type, cut, fat %, organic, sliced, etc. Two items differing in any descriptor are DIFFERENT items, even if they share a base word. Examples:
+  * "אצות קטנות" -> canonical_he "אצות קטנות"  (NOT "אצות")
+  * "דלעת ערמונים" -> canonical_he "דלעת ערמונים"  (NOT "דלעת")
+  * "דפי אורז עגולים" -> canonical_he "דפי אורז עגולים"  (NOT "דפי אורז")
+  * "תפוח אדום" -> canonical_he "תפוח אדום"  (NOT "תפוח")
+  * "חלב 3%" -> canonical_he "חלב 3%"  (NOT "חלב")
+- Put brand and explicit quantity in note, not in the canonical name.
 - If a single input string contains multiple distinct items run together (rare), split them.
-- Always return the same number of items as inputs (one per input), unless splitting.`;
+- CRITICAL: Return EXACTLY one item per input string, in the same order. Never drop an input, never merge two inputs into one. If you don't recognize the input, still return it with category "other" and the raw text as the canonical.`;
 
 export async function categorizeItems(rawTexts: string[]): Promise<ParsedItemT[]> {
   const response = await client.messages.create({

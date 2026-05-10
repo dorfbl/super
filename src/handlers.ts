@@ -361,16 +361,30 @@ async function addItems(
 
   if (unknown.length > 0) {
     const parsed = await categorizeItems(unknown);
-    for (const r of parsed) {
-      const item = await db.upsertItem(
-        {
-          canonical_he: r.canonical_he,
-          canonical_en: r.canonical_en,
-          category: r.category,
-        },
-        r.raw,
-      );
-      known.set(r.raw, item);
+    const byRaw = new Map(parsed.map((p) => [p.raw.trim(), p]));
+    for (const raw of unknown) {
+      const r = byRaw.get(raw.trim());
+      if (r) {
+        const item = await db.upsertItem(
+          {
+            canonical_he: r.canonical_he,
+            canonical_en: r.canonical_en,
+            category: r.category,
+          },
+          r.raw,
+        );
+        known.set(raw, item);
+      } else {
+        // Claude dropped this input. Don't lose it: fall back to the raw
+        // text as canonical_he/en in the "other" category. The user can
+        // /category and /rename it later.
+        console.warn(`[ai] Claude omitted input, fallback: ${JSON.stringify(raw)}`);
+        const item = await db.upsertItem(
+          { canonical_he: raw, canonical_en: raw, category: "other" },
+          raw,
+        );
+        known.set(raw, item);
+      }
     }
   }
 
